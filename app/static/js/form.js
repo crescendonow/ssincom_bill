@@ -143,6 +143,15 @@ function updateTotal() {
   document.getElementById("total_amount").innerText = `฿ ${total.toFixed(2)}`;
 }
 
+function formatDate(dateStr) {
+  const [day, month, year] = dateStr.split("/");
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
+const formattedDate = formatDate(invoice.invoice_date);
+realForm.append("invoice_date", formattedDate);
+
+
 function previewInvoice(event) {
   event.preventDefault();
 
@@ -168,10 +177,10 @@ function previewInvoice(event) {
     }
   });
 
-  // ✅ สร้าง FormData ที่ถูกต้อง
+  // ✅ create FormData 
   const realForm = new FormData();
   realForm.append("invoice_number", invoice.invoice_number);
-  realForm.append("invoice_date", invoice.invoice_date);
+  realForm.append("invoice_date", formatDate(invoice.invoice_date));
   realForm.append("customer_name", invoice.customer_name);
   realForm.append("customer_taxid", invoice.customer_taxid);
   realForm.append("customer_address", invoice.customer_address);
@@ -183,18 +192,18 @@ function previewInvoice(event) {
     realForm.append("unit_price", item.unit_price.toString());
   });
 
-  // ✅ ดูค่าก่อนส่ง
+  // ✅ view value
   for (const [key, value] of realForm.entries()) {
     console.log(key, value);
   }
 
-  // ✅ ส่งจริงไป backend
+  // ✅ send to backend
   fetch("/submit", {
     method: "POST",
     body: realForm
   })
     .then(() => {
-      // ✅ จากนั้นแสดง preview
+      // ✅ preview
       return fetch("/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
