@@ -144,7 +144,7 @@ function updateTotal() {
 }
 
 function previewInvoice(event) {
-  event.preventDefault(); // stop normal form
+  event.preventDefault();
 
   const form = document.getElementById("invoice_form");
   const formData = new FormData(form);
@@ -158,25 +158,24 @@ function previewInvoice(event) {
     items: [],
   };
 
-  // get list of product
   document.querySelectorAll("#items .item-row").forEach(row => {
     const product_code = row.querySelector('[name="product_code"]').value;
     const description = row.querySelector('[name="description"]').value;
     const quantity = parseFloat(row.querySelector('[name="quantity"]').value || 0);
     const unit_price = parseFloat(row.querySelector('[name="unit_price"]').value || 0);
-
     if (product_code || description) {
       invoice.items.push({ product_code, description, quantity, unit_price });
     }
   });
 
-  // send data to database
+  // ✅ สร้าง FormData ที่ถูกต้อง
   const realForm = new FormData();
   realForm.append("invoice_number", invoice.invoice_number);
   realForm.append("invoice_date", invoice.invoice_date);
   realForm.append("customer_name", invoice.customer_name);
   realForm.append("customer_taxid", invoice.customer_taxid);
   realForm.append("customer_address", invoice.customer_address);
+
   invoice.items.forEach(item => {
     realForm.append("product_code", item.product_code);
     realForm.append("description", item.description);
@@ -184,12 +183,18 @@ function previewInvoice(event) {
     realForm.append("unit_price", item.unit_price.toString());
   });
 
+  // ✅ ดูค่าก่อนส่ง
+  for (const [key, value] of realForm.entries()) {
+    console.log(key, value);
+  }
+
+  // ✅ ส่งจริงไป backend
   fetch("/submit", {
     method: "POST",
-    body: realForm,
+    body: realForm
   })
     .then(() => {
-      // preview pdf print 
+      // ✅ จากนั้นแสดง preview
       return fetch("/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -203,8 +208,7 @@ function previewInvoice(event) {
       previewWin.document.write(html);
       previewWin.document.close();
     });
-
-  return false;
 }
+
 
 
