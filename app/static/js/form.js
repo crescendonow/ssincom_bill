@@ -180,8 +180,8 @@ function previewInvoice(event) {
   invoice.items.forEach(item => {
     realForm.append("product_code", item.product_code);
     realForm.append("description", item.description);
-    realForm.append("quantity", item.quantity);
-    realForm.append("unit_price", item.unit_price);
+    realForm.append("quantity", item.quantity.toString());
+    realForm.append("unit_price", item.unit_price.toString());
   });
 
   fetch("/submit", {
