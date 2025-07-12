@@ -144,7 +144,7 @@ function updateTotal() {
 }
 
 function previewInvoice(event) {
-  event.preventDefault(); // cancel old submit
+  event.preventDefault(); // stop normal form
 
   const form = document.getElementById("invoice_form");
   const formData = new FormData(form);
@@ -158,7 +158,7 @@ function previewInvoice(event) {
     items: [],
   };
 
-  // get produt value
+  // get list of product
   document.querySelectorAll("#items .item-row").forEach(row => {
     const product_code = row.querySelector('[name="product_code"]').value;
     const description = row.querySelector('[name="description"]').value;
@@ -170,12 +170,32 @@ function previewInvoice(event) {
     }
   });
 
-  // send to preview
-  fetch("/preview", {
+  // send data to database
+  const realForm = new FormData();
+  realForm.append("invoice_number", invoice.invoice_number);
+  realForm.append("invoice_date", invoice.invoice_date);
+  realForm.append("customer_name", invoice.customer_name);
+  realForm.append("customer_taxid", invoice.customer_taxid);
+  realForm.append("customer_address", invoice.customer_address);
+  invoice.items.forEach(item => {
+    realForm.append("product_code", item.product_code);
+    realForm.append("description", item.description);
+    realForm.append("quantity", item.quantity);
+    realForm.append("unit_price", item.unit_price);
+  });
+
+  fetch("/submit", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(invoice),
+    body: realForm,
   })
+    .then(() => {
+      // preview pdf print 
+      return fetch("/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invoice),
+      });
+    })
     .then(res => res.text())
     .then(html => {
       const previewWin = window.open("", "_blank");
@@ -186,4 +206,5 @@ function previewInvoice(event) {
 
   return false;
 }
+
 
