@@ -1,7 +1,7 @@
 # /app/saletax_report.py
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, cast, String
+from sqlalchemy import func, or_, cast, String, case
 from typing import Optional, List
 from datetime import date, datetime
 
@@ -39,55 +39,74 @@ def saletax_list(
     itm = models.InvoiceItem
     cust = models.CustomerList
 
-    sum_amount = func.sum(
-    func.coalesce(itm.amount, func.coalesce(itm.quantity, 0) * func.coalesce(itm.cf_itempricelevel_price, 0))
-    )
-    q = db.query(
-    inv.idx,
-    inv.invoice_number,
-    inv.invoice_date,
-    inv.fname.label("company"),
-    inv.personid,
-    # ใช้ tax id จาก Invoice ถ้าไม่มีให้ fallback เป็นของ Customer
-    func.coalesce(inv.cf_taxid, cust.cf_taxid).label("tax_id"),
-    cust.cf_hq.label("hq"),
-    cust.cf_branch.label("branch"),
-    sum_amount.label("before_vat"),
-).outerjoin(
-    itm,
-    or_(itm.invoice_number == inv.invoice_number,
-        itm.invoice_number == cast(inv.idx, String))
-).outerjoin(
-    cust,
-    cust.personid == inv.personid
-)
+    qty_in_ton = func.sum(
+    case(
+        (itm.quantity >= 1000, func.coalesce(itm.quantity, 0) / 1000.0),
+        else_=func.coalesce(itm.quantity, 0)
+        )
+    ).label("sum_qty")
 
-    # ---- เงื่อนไขช่วงเวลาเหมือนเดิม ----
+    sum_amount = func.sum(
+        func.coalesce(
+            itm.amount,
+            func.coalesce(itm.quantity, 0) * func.coalesce(itm.cf_itempricelevel_price, 0)
+        )
+    )
+
+    q = db.query(
+        inv.idx,
+        inv.invoice_number,
+        inv.invoice_date,
+        inv.fname.label("company"),
+        inv.personid,
+        func.coalesce(inv.cf_taxid, cust.cf_taxid).label("tax_id"),
+        cust.cf_hq.label("hq"),
+        cust.cf_branch.label("branch"),
+        qty_in_ton,
+        sum_amount.label("before_vat")
+    ).outerjoin(
+        itm,
+        or_(
+            itm.invoice_number == inv.invoice_number,
+            itm.invoice_number == cast(inv.idx, String)
+        )
+    ).outerjoin(
+        cust,
+        cust.personid == inv.personid
+    )
+
+    # ---- เงื่อนไขช่วงเวลา ----
     if month and len(month) == 7:
         q = q.filter(func.to_char(inv.invoice_date, 'YYYY-MM') == month)
     elif year:
         q = q.filter(func.extract('year', inv.invoice_date) == year)
     else:
         d1, d2 = _to_date(start), _to_date(end)
-        if d1: q = q.filter(inv.invoice_date >= d1)
-        if d2: q = q.filter(inv.invoice_date <= d2)
+        if d1:
+            q = q.filter(inv.invoice_date >= d1)
+        if d2:
+            q = q.filter(inv.invoice_date <= d2)
 
-    # group by ให้ครบทุก non-aggregate
     q = q.group_by(
-        inv.idx, inv.invoice_number, inv.invoice_date, inv.fname, inv.personid,
-        func.coalesce(inv.cf_taxid, cust.cf_taxid), cust.cf_hq, cust.cf_branch
+        inv.idx, inv.invoice_number, inv.invoice_date,
+        inv.fname, inv.personid,
+        func.coalesce(inv.cf_taxid, cust.cf_taxid),
+        cust.cf_hq, cust.cf_branch
     ).order_by(inv.invoice_date.asc(), inv.invoice_number.asc())
 
     rows = []
-    for idx, inv_no, inv_date, company, personid, tax_id, hq, branch, before in q.all():
+    for idx, inv_no, inv_date, company, personid, tax_id, hq, branch, sum_qty, before in q.all():
+        qty = float(sum_qty or 0.0)
         before = float(before or 0.0)
+
         vat = before * VAT_RATE
         grand = before + vat
-        # แปลงสถานประกอบการตามรูปแบบรายงาน
-        if hq is None and not branch:
-            branch_text = "-"
-        else:
-            branch_text = "สำนักงานใหญ่" if (hq == 1 or hq == "1") else (f"สาขาที่ {branch}" if branch else "-")
+
+        branch_text = (
+            "สำนักงานใหญ่"
+            if (hq == 1 or hq == "1")
+            else (f"สาขาที่ {branch}" if branch else "-")
+        )
 
         rows.append({
             "idx": idx,
@@ -99,10 +118,12 @@ def saletax_list(
             "cf_hq": hq,
             "cf_branch": branch,
             "branch_text": branch_text,
+            "sum_qty": round(qty, 3),
             "before_vat": round(before, 2),
             "vat": round(vat, 2),
             "grand": round(grand, 2),
         })
+
     return rows
 
 # -------- สรุปยอดต่อช่วง (ไม่แยก/แยกบริษัท) --------
