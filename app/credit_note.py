@@ -618,7 +618,7 @@ def grn_summary(grn: str = Query(...), db: Session = Depends(get_db)):
           SELECT it.cf_itemid, it.cf_itemname, it.quantity
           FROM ss_invoices.invoices AS inv
           JOIN ss_invoices.invoice_items AS it
-            ON inv.invoice_number = it.invoice_number
+            ON inv.idx::text = it.invoice_number
           WHERE inv.grn_number = :grn
         )
         SELECT
