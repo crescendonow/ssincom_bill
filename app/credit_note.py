@@ -648,33 +648,6 @@ def grn_summary(grn: str = Query(...), db: Session = Depends(get_db)):
         "quantity_sum": float(row[4] or 0),
     }
 
-    # (option) map personid -> ข้อมูลลูกค้า (ปรับ model ให้ตรงตารางของคุณ)
-    buyer = None
-    try:
-        from . import models
-        c = db.query(models.CustomerList).filter(models.CustomerList.personid == personid).first()
-        if c:
-            buyer = {
-                "personid": c.personid,
-                "name": c.fname,
-                "addr": c.cf_personaddress,
-                "tax": c.cf_taxid,
-                "tel": c.tel,
-                "mobile": c.mobile,
-                "zipcode": c.cf_personzipcode,
-                "prov": c.cf_provincename,
-            }
-    except Exception:
-        buyer = None
-
-    return {
-        "invoice_number": invoice_number,
-        "personid": personid,
-        "product_codes": product_codes,
-        "descriptions": descriptions,
-        "quantity_sum": quantity_sum,
-        "buyer": buyer
-    }
 @router.get("/api/products/price")
 def api_product_price(
     code: str = Query(..., min_length=1),
