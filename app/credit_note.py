@@ -605,7 +605,7 @@ def suggest_grn(q: str = Query(""), limit: int = Query(10, ge=1, le=50), db: Ses
     return {"items": [r[0] for r in rows if r[0]]}
 
 @router.get("/api/grn/summary")
-def grn_summary(grn: str = Query(...), db: Session = Depends(get_db)):
+def grn_summary(grn: str = Query(..., min_length=1), db: Session = Depends(get_db)):
     sql = text("""
         WITH inv_first AS (
           SELECT invoice_number, personid
@@ -615,21 +615,19 @@ def grn_summary(grn: str = Query(...), db: Session = Depends(get_db)):
           LIMIT 1
         ),
         src AS (
-          SELECT it.cf_itemid, it.cf_itemname, it.quantity
+          SELECT it.cf_itemid, it.cf_itemname, it.sum_quantity
           FROM ss_invoices.invoices AS inv
           JOIN ss_invoices.invoice_items AS it
             ON inv.idx::text = it.invoice_number
           WHERE inv.grn_number = :grn
         )
         SELECT
-          (SELECT invoice_number FROM inv_first) AS invoice_number,
-          (SELECT personid FROM inv_first) AS personid,
-          ARRAY_AGG(DISTINCT cf_itemid)   AS product_codes,
-          ARRAY_AGG(DISTINCT cf_itemname) AS descriptions,
-          COALESCE(SUM(quantity),0)       AS quantity_sum
-        FROM src
+          (SELECT invoice_number FROM inv_first) AS invoice_number_first,
+          (SELECT personid FROM inv_first) AS personid_first,
+          (SELECT ARRAY_AGG(DISTINCT cf_itemid) FROM src) AS product_codes,
+          (SELECT ARRAY_AGG(DISTINCT cf_itemname) FROM src) AS descriptions,
+          (SELECT COALESCE(SUM(quantity),0) FROM src) AS quantity_sum
     """)
-
     row = db.execute(sql, {"grn": grn}).first()
     if not row:
         return {
@@ -637,17 +635,43 @@ def grn_summary(grn: str = Query(...), db: Session = Depends(get_db)):
             "personid": None,
             "product_codes": [],
             "descriptions": [],
-            "quantity_sum": 0
+            "quantity_sum": 0,
+            "buyer": None
         }
 
-    return {
-        "invoice_number": row[0],
-        "personid": row[1],
-        "product_codes": row[2] or [],
-        "descriptions": row[3] or [],
-        "quantity_sum": float(row[4] or 0),
-    }
+    invoice_number = row[0]
+    personid = row[1]
+    product_codes = row[2] or []
+    descriptions = row[3] or []
+    quantity_sum = float(row[4] or 0)
 
+    # (ออปชัน) map personid -> ข้อมูลลูกค้า (ปรับ model ให้ตรงตารางของคุณ)
+    buyer = None
+    try:
+        from . import models
+        c = db.query(models.CustomerList).filter(models.CustomerList.personid == personid).first()
+        if c:
+            buyer = {
+                "personid": c.personid,
+                "name": c.fname,
+                "addr": c.cf_personaddress,
+                "tax": c.cf_taxid,
+                "tel": c.tel,
+                "mobile": c.mobile,
+                "zipcode": c.cf_personzipcode,
+                "prov": c.cf_provincename,
+            }
+    except Exception:
+        buyer = None
+
+    return {
+        "invoice_number": invoice_number,
+        "personid": personid,
+        "product_codes": product_codes,
+        "descriptions": descriptions,
+        "quantity_sum": quantity_sum,
+        "buyer": buyer
+    }
 @router.get("/api/products/price")
 def api_product_price(
     code: str = Query(..., min_length=1),

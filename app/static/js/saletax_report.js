@@ -2,7 +2,8 @@ const API_LIST = "/api/saletax/list";
 
 document.addEventListener("DOMContentLoaded", () => {
     const $ = s => document.querySelector(s);
-    let rows = [], granularity = "day";
+    let rows = [], granularity = "day", currentPage = 1;
+    const PAGE_SIZE = 30;
 
     // ====== INIT FLATPICKR (TH) ======
     if (window.flatpickr) {
@@ -89,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await fetch(`${API_LIST}?${params}`);
             if (!res.ok) throw new Error(await res.text());
             rows = await res.json();
+            currentPage = 1;
             render(rows);
         } catch (e) { console.error(e); alert("โหลดข้อมูลล้มเหลว"); }
     }
@@ -97,11 +99,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const tb = $("#reportBody"); tb.innerHTML = "";
         let totalBefore = 0, totalTon = 0, totalVat = 0, totalGrand = 0;
 
-        data.forEach((r, i) => {
+        // Compute totals from ALL data
+        data.forEach(r => {
             const vat = r.vat ?? r.before_vat * 0.07;
             const grand = r.grand ?? r.before_vat + vat;
             totalBefore += r.before_vat; totalTon += r.sum_qty; totalVat += vat; totalGrand += grand;
+        });
+
+        // Pagination
+        const totalRows = data.length;
+        const maxPage = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+        if (currentPage > maxPage) currentPage = maxPage;
+        const startIdx = (currentPage - 1) * PAGE_SIZE;
+        const endIdx = Math.min(totalRows, startIdx + PAGE_SIZE);
+        const pageData = data.slice(startIdx, endIdx);
+
+        pageData.forEach((r, pi) => {
+            const i = startIdx + pi;
+            const vat = r.vat ?? r.before_vat * 0.07;
+            const grand = r.grand ?? r.before_vat + vat;
             const branch = r.cf_hq == 1 ? "สำนักงานใหญ่" : (r.cf_branch ? `สาขาที่ ${r.cf_branch}` : "-");
+
+            const items = r.items || [];
+            const itemIds = items.map(it => it.cf_itemid || "").filter(Boolean).join(", ") || "-";
+            const itemNames = items.map(it => it.cf_itemname || "").filter(Boolean).join(", ") || "-";
+            const driverName = r.driver_name || "-";
 
             const tr = document.createElement("tr");
             tr.innerHTML = `
@@ -112,6 +134,9 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${r.company || "-"}</td>
         <td class="text-center">${r.cf_taxid || "-"}</td>
         <td class="text-center">${branch}</td>
+        <td class="text-center">${driverName}</td>
+        <td class="text-center">${itemIds}</td>
+        <td>${itemNames}</td>
         <td class="text-center">${fmtNum(r.sum_qty || 0)}</td>
         <td class="text-right">${fmtNum(r.before_vat)}</td>
         <td class="text-right">${fmtNum(vat)}</td>
@@ -122,12 +147,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const trSum = document.createElement("tr");
         trSum.className = "font-bold bg-gray-50";
         trSum.innerHTML = `
-      <td colspan="7" class="text-right">รวม</td>
+      <td colspan="10" class="text-right">รวม</td>
       <td class="text-right">${fmtNum(totalTon)}</td>
       <td class="text-right">${fmtNum(totalBefore)}</td>
       <td class="text-right">${fmtNum(totalVat)}</td>
       <td class="text-right">${fmtNum(totalGrand)}</td>`;
         tb.appendChild(trSum);
+
+        // Pagination info
+        updatePagination(totalRows, maxPage);
 
         // อัปเดต KPI + หัวรายงาน
         $("#kCount").textContent = data.length;
@@ -136,6 +164,28 @@ document.addEventListener("DOMContentLoaded", () => {
         $(".month-year").textContent = thaiMonthYear();
         $("#subtitle").textContent = `${thaiMonthYear()} (${data.length} รายการ)`;
         $("#kTon").textContent = Number(totalTon || 0).toLocaleString("en-US", { minimumFractionDigits: 3 });
+    }
+
+    function updatePagination(total, maxPage) {
+        let pag = document.getElementById("pagination-controls");
+        if (!pag) {
+            pag = document.createElement("div");
+            pag.id = "pagination-controls";
+            pag.className = "flex items-center justify-between mt-4 px-2";
+            const tableParent = document.getElementById("sale-tax-table")?.parentElement;
+            if (tableParent) tableParent.after(pag);
+        }
+        const from = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+        const to = Math.min(total, currentPage * PAGE_SIZE);
+        pag.innerHTML = `
+            <div class="text-xs text-gray-500">แสดง ${from}-${to} จากทั้งหมด ${total} รายการ</div>
+            <div class="flex items-center gap-2">
+                <button id="pagePrev" class="px-3 py-1 border rounded text-xs hover:bg-gray-50" ${currentPage <= 1 ? 'disabled' : ''}>ก่อนหน้า</button>
+                <span class="text-xs text-gray-700">หน้า ${currentPage} / ${maxPage}</span>
+                <button id="pageNext" class="px-3 py-1 border rounded text-xs hover:bg-gray-50" ${currentPage >= maxPage ? 'disabled' : ''}>ถัดไป</button>
+            </div>`;
+        document.getElementById("pagePrev")?.addEventListener("click", () => { if (currentPage > 1) { currentPage--; render(rows); } });
+        document.getElementById("pageNext")?.addEventListener("click", () => { if (currentPage < maxPage) { currentPage++; render(rows); } });
     }
 
     function exportExcel() {
@@ -150,6 +200,7 @@ document.addEventListener("DOMContentLoaded", () => {
             "ลำดับ", "วันเดือนปี", "เลขที่ใบกำกับ",
             "รหัสลูกค้า", "ชื่อผู้ขายสินค้า/บริการ",
             "เลขประจำตัวผู้เสียภาษี", "สถานประกอบการ",
+            "พนักงานขับรถ", "รหัสสินค้า", "รายการสินค้า",
             "จำนวนตัน",
             "มูลค่าสินค้า/บริการ", "VAT", "รวม"
         ];
@@ -163,14 +214,22 @@ document.addEventListener("DOMContentLoaded", () => {
             const branch = (r.cf_hq == 1) ? "สำนักงานใหญ่"
                 : (r.cf_branch ? `สาขาที่ ${r.cf_branch}` : "-");
 
+            const items = r.items || [];
+            const itemIds = items.map(it => it.cf_itemid || "").filter(Boolean).join(", ") || "-";
+            const itemNames = items.map(it => it.cf_itemname || "").filter(Boolean).join(", ") || "-";
+            const driverName = r.driver_name || "-";
+
             data.push([
                 i + 1,
-                fmtThaiDate(r.invoice_date), // เป็น string ไทยอ่านง่าย
+                fmtThaiDate(r.invoice_date),
                 r.invoice_number || "-",
                 r.personid || "-",
                 r.company || "-",
                 r.cf_taxid || "-",
                 branch,
+                driverName,
+                itemIds,
+                itemNames,
                 Number(r.sum_qty || 0),
                 before, vat, grand
             ]);
@@ -181,13 +240,14 @@ document.addEventListener("DOMContentLoaded", () => {
         // ความกว้างคอลัมน์
         ws['!cols'] = [
             { wch: 8 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 14 },
-            { wch: 36 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }
+            { wch: 36 }, { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 40 },
+            { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 16 }
         ];
 
         // จัดรูปแบบตัวเลขให้คอลัมน์เงิน
         const range = XLSX.utils.decode_range(ws['!ref']);
         for (let R = 1; R <= range.e.r; R++) {
-            [8, 9, 10].forEach(C => {
+            [11, 12, 13].forEach(C => {
                 const addr = XLSX.utils.encode_cell({ r: R, c: C });
                 const cell = ws[addr];
                 if (cell && typeof cell.v === 'number') {

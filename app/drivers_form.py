@@ -4,24 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, Column, String
-from .database import SessionLocal, Base
+from .database import SessionLocal
+from . import models
+from .models import Driver
 
 from datetime import date
 from sqlalchemy import func
-from . import models  # ต้องมี models.Invoice และ models.InvoiceItem อยู่แล้ว
 
 VAT_RATE = 0.07
 
 router = APIRouter()
-
-class Driver(Base):
-    __tablename__ = "drivers"
-    __table_args__ = {"schema": "products"}
-    driver_id = Column(String(8), primary_key=True, index=True)  # D0001
-    citizen_id = Column(String(13), unique=True, index=True, nullable=False)
-    prefix = Column(String(16))
-    first_name = Column(String(64), nullable=False)
-    last_name = Column(String(64), nullable=False)
 
 def get_db():
     db = SessionLocal()
@@ -86,12 +78,40 @@ def list_drivers(
         ))
     total = q.count()
     rows = q.order_by(Driver.driver_id.asc(), Driver.first_name.asc()).offset((page-1)*page_size).limit(page_size).all()
+
+    # Batch-load car plates for each driver from invoices
+    driver_ids = [r.driver_id for r in rows]
+    car_plates_map = {}
+    if driver_ids:
+        inv = models.Invoice
+        car_q = (
+            db.query(
+                inv.driver_id,
+                func.array_to_string(
+                    func.array_agg(func.distinct(inv.car_numberplate)),
+                    ', '
+                ).label("plates"),
+            )
+            .filter(inv.driver_id.in_(driver_ids))
+            .filter(inv.car_numberplate.isnot(None))
+            .group_by(inv.driver_id)
+            .all()
+        )
+        car_plates_map = {did: plates for did, plates in car_q}
+
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
         "items": [
-            {"driver_id": r.driver_id, "citizen_id": r.citizen_id, "prefix": r.prefix, "first_name": r.first_name, "last_name": r.last_name}
+            {
+                "driver_id": r.driver_id,
+                "citizen_id": r.citizen_id,
+                "prefix": r.prefix,
+                "first_name": r.first_name,
+                "last_name": r.last_name,
+                "car_plates": car_plates_map.get(r.driver_id, ""),
+            }
             for r in rows
         ]
     }
@@ -315,4 +335,3 @@ def driver_invoices(
             "car_numberplate": car_numberplate or "",
         })
     return out
-
