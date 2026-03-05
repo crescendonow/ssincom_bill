@@ -615,7 +615,7 @@ def grn_summary(grn: str = Query(..., min_length=1), db: Session = Depends(get_d
           LIMIT 1
         ),
         src AS (
-          SELECT it.cf_itemid, it.cf_itemname, it.sum_quantity
+          SELECT it.cf_itemid, it.cf_itemname, it.quantity
           FROM ss_invoices.invoices AS inv
           JOIN ss_invoices.invoice_items AS it
             ON inv.idx::text = it.invoice_number
