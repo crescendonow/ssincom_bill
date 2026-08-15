@@ -1,4 +1,38 @@
 /* ===============================
+   FONT: ฝัง TH Sarabun New จาก /static/fonts
+   คอนเทนเนอร์ไม่ได้ติดตั้งฟอนต์นี้ ถ้าไม่ประกาศ @font-face
+   WeasyPrint จะตกไปใช้ฟอนต์สำรอง ทำให้ PDF ไม่ตรงกับที่เห็นบนจอ
+   path เป็น relative จากตัวไฟล์ CSS -> ใช้ได้ทั้ง <link> และ CSS(filename=...)
+   =============================== */
+@font-face {
+  font-family: "TH Sarabun New";
+  src: url("../fonts/THSarabunNew.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "TH Sarabun New";
+  src: url("../fonts/THSarabunNew%20Bold.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "TH Sarabun New";
+  src: url("../fonts/THSarabunNew%20Italic.ttf") format("truetype");
+  font-weight: normal;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "TH Sarabun New";
+  src: url("../fonts/THSarabunNew%20BoldItalic.ttf") format("truetype");
+  font-weight: bold;
+  font-style: italic;
+}
+
+/* ===============================
    BASE จาก bill_note.css
    =============================== */
 
